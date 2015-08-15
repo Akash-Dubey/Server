@@ -33,39 +33,10 @@ enum sleepLen // Time is in milliseconds
 };
 
 // Function Prototypes
-bool clientSentExit(string_ptr);
-void disconnectClient(socket_ptr);
-void acceptorLoop();
-void requestLoop();
-void responseLoop();
-// End of Function Prototypes
-
-int main(int argc, char** argv)
-{
-	boost::thread_group threads;
-
-	threads.create_thread(boost::bind(acceptorLoop));
-	boost::this_thread::sleep( boost::posix_time::millisec(sleepLen::sml));
-
-	threads.create_thread(boost::bind(requestLoop));
-	boost::this_thread::sleep( boost::posix_time::millisec(sleepLen::sml));
-
-	threads.create_thread(boost::bind(responseLoop));
-	boost::this_thread::sleep( boost::posix_time::millisec(sleepLen::sml));
-
-	threads.join_all();
-
-	puts("Press any key to continue...");
-	getc(stdin);
-	return EXIT_SUCCESS;
-}
-
-void acceptorLoop()
-{
+void acceptorLoop() {
 	cout << "Waiting for clients..." << endl;
 
-	for(;;)
-	{
+	while (1) {
 		socket_ptr clientSock(new tcp::socket(service));
 
 		acceptor.accept(*clientSock);
@@ -80,25 +51,20 @@ void acceptorLoop()
 	}
 }
 
-void requestLoop()
-{
-	for(;;)
-	{
-		if(!clientList->empty())
-		{
+
+void requestLoop() {
+	while (1) {
+		if(!clientList->empty()) {
 			mtx.lock();
-			for(auto& clientSock : *clientList)
-			{
-				if(clientSock->available())
-				{
+			for(auto& clientSock : *clientList) {
+				if(clientSock->available()) {
 					char readBuf[bufSize] = {0};
 
 					int bytesRead = clientSock->read_some(buffer(readBuf, bufSize));
 
 					string_ptr msg(new string(readBuf, bytesRead));
 
-					if(clientSentExit(msg))
-					{
+					if(clientSentExit(msg)) {
 						disconnectClient(clientSock);
 						break;
 					}
@@ -118,16 +84,15 @@ void requestLoop()
 	}
 }
 
-bool clientSentExit(string_ptr message)
-{
-	if(message->find("exit") != string::npos)
+bool clientSentExit(string_ptr message) {
+	if(message->find("exit") != string::npos) {
 		return true;
-	else
+	} else {
 		return false;
+	}
 }
 
-void disconnectClient(socket_ptr clientSock)
-{
+void disconnectClient(socket_ptr clientSock) {
 	auto position = find(clientList->begin(), clientList->end(), clientSock);
 
 	clientSock->shutdown(tcp::socket::shutdown_both);
@@ -137,6 +102,49 @@ void disconnectClient(socket_ptr clientSock)
 
 	cout << "Client Disconnected! " << clientList->size() << " total clients" << endl;
 }
+
+void responseLoop()
+{
+	while (1) {
+		if(!messageQueue->empty()) {
+			auto message = messageQueue->front();
+
+			mtx.lock();
+			for(auto& clientSock : *clientList) {
+				clientSock->write_some(buffer(*(message->begin()->second), bufSize));
+			}
+			mtx.unlock();
+
+			mtx.lock();
+			messageQueue->pop();
+			mtx.unlock();
+		}
+
+		boost::this_thread::sleep( boost::posix_time::millisec(sleepLen::lon));
+	}
+}
+// End of Function Prototypes
+
+int main(int argc, char** argv) {
+	boost::thread_group threads;
+
+	threads.create_thread(boost::bind(acceptorLoop));
+	boost::this_thread::sleep( boost::posix_time::millisec(sleepLen::sml));
+
+	threads.create_thread(boost::bind(requestLoop));
+	boost::this_thread::sleep( boost::posix_time::millisec(sleepLen::sml));
+
+	threads.create_thread(boost::bind(responseLoop));
+	boost::this_thread::sleep( boost::posix_time::millisec(sleepLen::sml));
+
+	threads.join_all();
+
+	puts("Press any key to continue...");
+	getc(stdin);
+	return EXIT_SUCCESS;
+}
+
+
 
 void responseLoop()
 {
